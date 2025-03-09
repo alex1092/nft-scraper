@@ -1,101 +1,215 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [contractAddress, setContractAddress] = useState("");
+  const [startTokenId, setStartTokenId] = useState("1");
+  const [endTokenId, setEndTokenId] = useState("10");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [isSuccess, setIsSuccess] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError("");
+    setIsSuccess(false);
+
+    try {
+      // Validate inputs
+      if (!contractAddress) {
+        throw new Error("Contract address is required");
+      }
+
+      if (!startTokenId || !endTokenId) {
+        throw new Error("Token ID range is required");
+      }
+
+      if (Number(startTokenId) > Number(endTokenId)) {
+        throw new Error(
+          "Start Token ID must be less than or equal to End Token ID"
+        );
+      }
+
+      // Create a link element to trigger the download
+      const link = document.createElement("a");
+      link.href = `/api/scrape?contractAddress=${contractAddress}&startTokenId=${startTokenId}&endTokenId=${endTokenId}`;
+      link.download = `nft-collection-${contractAddress}.zip`;
+
+      // Fetch the data
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contractAddress,
+          startTokenId,
+          endTokenId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to scrape NFTs");
+      }
+
+      // Get the blob from the response
+      const blob = await response.blob();
+
+      // Create a URL for the blob
+      const url = window.URL.createObjectURL(blob);
+
+      // Set the link's href to the blob URL
+      link.href = url;
+
+      // Append the link to the body
+      document.body.appendChild(link);
+
+      // Click the link to trigger the download
+      link.click();
+
+      // Remove the link from the body
+      document.body.removeChild(link);
+
+      // Set success state
+      setIsSuccess(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-between p-8 md:p-24">
+      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm">
+        <h1 className="text-4xl font-bold mb-8 text-center">
+          NFT Collection Scraper
+        </h1>
+
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md w-full">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label
+                htmlFor="contractAddress"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >
+                Contract Address
+              </label>
+              <input
+                type="text"
+                id="contractAddress"
+                value={contractAddress}
+                onChange={(e) => setContractAddress(e.target.value)}
+                placeholder="0xC0FFee8FF7e5497C2d6F7684859709225Fcc5Be8"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="startTokenId"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
+                  Start Token ID
+                </label>
+                <input
+                  type="number"
+                  id="startTokenId"
+                  value={startTokenId}
+                  onChange={(e) => setStartTokenId(e.target.value)}
+                  min="1"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="endTokenId"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
+                  End Token ID
+                </label>
+                <input
+                  type="number"
+                  id="endTokenId"
+                  value={endTokenId}
+                  onChange={(e) => setEndTokenId(e.target.value)}
+                  min="1"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              <p>
+                Note: For performance reasons, a maximum of 100 NFTs can be
+                scraped at once.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? "Scraping..." : "Download NFT Collection"}
+            </button>
+          </form>
+
+          {error && (
+            <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md">
+              <p>{error}</p>
+            </div>
+          )}
+
+          {isSuccess && (
+            <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-md">
+              <p>NFT collection successfully downloaded!</p>
+            </div>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="mt-12 text-center">
+          <h2 className="text-2xl font-semibold mb-4">How It Works</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="text-3xl mb-2">1</div>
+              <h3 className="text-lg font-medium mb-2">
+                Enter Contract Details
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Provide the NFT contract address and token ID range you want to
+                scrape.
+              </p>
+            </div>
+
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="text-3xl mb-2">2</div>
+              <h3 className="text-lg font-medium mb-2">Process Collection</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Our system fetches metadata and images from the blockchain and
+                IPFS.
+              </p>
+            </div>
+
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="text-3xl mb-2">3</div>
+              <h3 className="text-lg font-medium mb-2">Download ZIP</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Receive a ZIP file containing all NFT images and metadata.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   );
 }
