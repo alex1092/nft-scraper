@@ -1,21 +1,108 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
+import JSZip from "jszip";
 
 export default function Home() {
   const [contractAddress, setContractAddress] = useState("");
   const [startTokenId, setStartTokenId] = useState("1");
-  const [endTokenId, setEndTokenId] = useState("10");
+  const [endTokenId, setEndTokenId] = useState("5");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
+  const [progress, setProgress] = useState({
+    current: 0,
+    total: 0,
+    percentage: 0,
+  });
+  const [results, setResults] = useState([]);
+
+  // Process a single token
+  const processToken = async (contractAddress, tokenId) => {
+    try {
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contractAddress,
+          tokenId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to process token");
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`Error processing token ${tokenId}:`, error);
+      return {
+        tokenId,
+        success: false,
+        error: error.message,
+      };
+    }
+  };
+
+  // Create and download a zip file with the results
+  const createAndDownloadZip = async (contractAddress, results) => {
+    const zip = new JSZip();
+    const imagesFolder = zip.folder("images");
+
+    // Add metadata.json file with all the metadata
+    const metadataResults = results.map((result) => {
+      const { imageData, ...rest } = result;
+      return rest;
+    });
+
+    zip.file(
+      "metadata.json",
+      JSON.stringify(
+        {
+          contractAddress,
+          results: metadataResults,
+        },
+        null,
+        2
+      )
+    );
+
+    // Add each image to the zip file
+    for (const result of results) {
+      if (result.success && result.imageData) {
+        const fileName = `${result.tokenId}.jpg`;
+        const binary = atob(result.imageData.base64);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+        imagesFolder.file(fileName, array, { binary: true });
+      }
+    }
+
+    // Generate the zip file
+    const zipContent = await zip.generateAsync({ type: "blob" });
+
+    // Create a download link
+    const url = window.URL.createObjectURL(zipContent);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `nft-collection-${contractAddress}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
     setIsSuccess(false);
+    setResults([]);
 
     try {
       // Validate inputs
@@ -27,52 +114,39 @@ export default function Home() {
         throw new Error("Token ID range is required");
       }
 
-      if (Number(startTokenId) > Number(endTokenId)) {
+      const start = Number(startTokenId);
+      const end = Number(endTokenId);
+
+      if (start > end) {
         throw new Error(
           "Start Token ID must be less than or equal to End Token ID"
         );
       }
 
-      // Create a link element to trigger the download
-      const link = document.createElement("a");
-      link.href = `/api/scrape?contractAddress=${contractAddress}&startTokenId=${startTokenId}&endTokenId=${endTokenId}`;
-      link.download = `nft-collection-${contractAddress}.zip`;
+      // Limit the number of tokens to scrape to prevent abuse
+      const maxTokens = 50;
+      const actualEndTokenId = Math.min(start + maxTokens, end);
 
-      // Fetch the data
-      const response = await fetch("/api/scrape", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contractAddress,
-          startTokenId,
-          endTokenId,
-        }),
-      });
+      // Calculate total tokens to process
+      const totalTokens = actualEndTokenId - start + 1;
+      setProgress({ current: 0, total: totalTokens, percentage: 0 });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to scrape NFTs");
+      // Process tokens sequentially to avoid overwhelming the server
+      const allResults = [];
+
+      for (let tokenId = start; tokenId <= actualEndTokenId; tokenId++) {
+        const result = await processToken(contractAddress, tokenId);
+        allResults.push(result);
+
+        // Update progress
+        const current = tokenId - start + 1;
+        const percentage = Math.round((current / totalTokens) * 100);
+        setProgress({ current, total: totalTokens, percentage });
+        setResults([...allResults]); // Update results as they come in
       }
 
-      // Get the blob from the response
-      const blob = await response.blob();
-
-      // Create a URL for the blob
-      const url = window.URL.createObjectURL(blob);
-
-      // Set the link's href to the blob URL
-      link.href = url;
-
-      // Append the link to the body
-      document.body.appendChild(link);
-
-      // Click the link to trigger the download
-      link.click();
-
-      // Remove the link from the body
-      document.body.removeChild(link);
+      // Create and download the zip file
+      await createAndDownloadZip(contractAddress, allResults);
 
       // Set success state
       setIsSuccess(true);
@@ -150,7 +224,7 @@ export default function Home() {
 
             <div className="text-sm text-gray-500 dark:text-gray-400">
               <p>
-                Note: For performance reasons, a maximum of 10 NFTs can be
+                Note: For performance reasons, a maximum of 50 NFTs can be
                 scraped at once.
               </p>
             </div>
@@ -160,9 +234,24 @@ export default function Home() {
               disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? "Scraping..." : "Download NFT Collection"}
+              {isLoading ? "Processing..." : "Download NFT Collection"}
             </button>
           </form>
+
+          {isLoading && (
+            <div className="mt-4">
+              <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 mb-2">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full"
+                  style={{ width: `${progress.percentage}%` }}
+                />
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Processing {progress.current} of {progress.total} NFTs (
+                {progress.percentage}%)
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md">
@@ -173,6 +262,42 @@ export default function Home() {
           {isSuccess && (
             <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-md">
               <p>NFT collection successfully downloaded!</p>
+            </div>
+          )}
+
+          {/* Display results as they come in */}
+          {results.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-lg font-medium mb-3">Processed NFTs</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {results.map((result) => (
+                  <div
+                    key={result.tokenId}
+                    className={`p-2 rounded-lg border ${
+                      result.success
+                        ? "border-green-300 bg-green-50 dark:bg-green-900/20"
+                        : "border-red-300 bg-red-50 dark:bg-red-900/20"
+                    }`}
+                  >
+                    <div className="text-center mb-1">#{result.tokenId}</div>
+                    {result.success && result.imageData ? (
+                      <div className="aspect-square relative overflow-hidden rounded">
+                        <img
+                          src={`data:${result.imageData.contentType};base64,${result.imageData.base64}`}
+                          alt={`NFT #${result.tokenId}`}
+                          className="object-cover w-full h-full"
+                        />
+                      </div>
+                    ) : (
+                      <div className="aspect-square flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded">
+                        <span className="text-xs text-red-500">
+                          {result.error || "Failed"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

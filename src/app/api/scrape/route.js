@@ -1,90 +1,93 @@
 import { NextResponse } from "next/server";
-import { scrapeNFTs } from "@/utils/nftScraper";
-import JSZip from "jszip";
+import { getTokenURI, fetchMetadata, fetchImageData } from "@/utils/nftScraper";
 
-export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const contractAddress = searchParams.get("contractAddress");
-  const startTokenId = searchParams.get("startTokenId");
-  const endTokenId = searchParams.get("endTokenId");
-
-  return handleScrapeRequest(contractAddress, startTokenId, endTokenId);
-}
-
+// Process a single token and return its data
 export async function POST(request) {
   try {
-    const { contractAddress, startTokenId, endTokenId } = await request.json();
-    return handleScrapeRequest(contractAddress, startTokenId, endTokenId);
-  } catch (error) {
-    console.error("Error parsing request body:", error);
-    return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
-}
+    const { contractAddress, tokenId } = await request.json();
 
-async function handleScrapeRequest(contractAddress, startTokenId, endTokenId) {
-  try {
-    if (!contractAddress || !startTokenId || !endTokenId) {
+    if (!contractAddress || !tokenId) {
       return NextResponse.json(
         { error: "Missing required parameters" },
         { status: 400 }
       );
     }
 
-    // Limit the number of tokens to scrape to prevent abuse
-    const maxTokens = 10;
-    const actualEndTokenId = Math.min(
-      Number(startTokenId) + maxTokens,
-      Number(endTokenId)
-    );
-
-    // Get the INFURA_API_KEY from environment variables
+    // Get API keys from environment variables
     const infuraApiKey = process.env.INFURA_API_KEY;
+    const alchemyApiKey = process.env.ALCHEMY_API_KEY;
+    const primaryProvider = process.env.PRIMARY_PROVIDER || "infura";
 
-    if (!infuraApiKey) {
+    if (!infuraApiKey && primaryProvider === "infura") {
       return NextResponse.json(
         { error: "Missing INFURA_API_KEY in environment variables" },
         { status: 500 }
       );
     }
 
-    // Scrape NFTs
-    const scrapedData = await scrapeNFTs(
-      contractAddress,
-      startTokenId,
-      actualEndTokenId,
-      infuraApiKey
-    );
-
-    // Create a zip file with the images
-    const zip = new JSZip();
-    const imagesFolder = zip.folder("images");
-
-    // Add metadata.json file with all the metadata
-    zip.file("metadata.json", JSON.stringify(scrapedData, null, 2));
-
-    // Add each image to the zip file
-    for (const result of scrapedData.results) {
-      if (result.success && result.imageData) {
-        const fileName = `${result.tokenId}.jpg`;
-        imagesFolder.file(fileName, result.imageData.data, { binary: true });
-      }
+    if (!alchemyApiKey && primaryProvider === "alchemy") {
+      return NextResponse.json(
+        { error: "Missing ALCHEMY_API_KEY in environment variables" },
+        { status: 500 }
+      );
     }
 
-    // Generate the zip file
-    const zipContent = await zip.generateAsync({ type: "arraybuffer" });
+    // Process a single token
+    console.log(`Processing token ID: ${tokenId}`);
 
-    // Return the zip file
-    return new NextResponse(zipContent, {
-      headers: {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="nft-collection-${contractAddress}.zip"`,
+    // Get token URI
+    const tokenURI = await getTokenURI(
+      contractAddress,
+      tokenId,
+      infuraApiKey,
+      primaryProvider
+    );
+    if (!tokenURI) {
+      return NextResponse.json({
+        tokenId,
+        success: false,
+        error: "Failed to get tokenURI",
+      });
+    }
+
+    // Fetch metadata
+    const metadata = await fetchMetadata(tokenURI);
+    if (!metadata || !metadata.image) {
+      return NextResponse.json({
+        tokenId,
+        success: false,
+        error: "Failed to fetch metadata or no image found",
+      });
+    }
+
+    // Fetch image data
+    const imageUrl = metadata.image;
+    const imageData = await fetchImageData(imageUrl);
+
+    if (!imageData) {
+      return NextResponse.json({
+        tokenId,
+        success: false,
+        error: "Failed to download image",
+      });
+    }
+
+    console.log(`Successfully processed token ID ${tokenId}`);
+
+    // Return the image data as base64 to avoid binary transmission issues
+    const base64Image = Buffer.from(imageData.data).toString("base64");
+
+    return NextResponse.json({
+      tokenId,
+      success: true,
+      metadata,
+      imageData: {
+        base64: base64Image,
+        contentType: imageData.contentType,
       },
     });
   } catch (error) {
-    console.error("Error in scrape endpoint:", error);
+    console.error("Error processing token:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
