@@ -21,6 +21,10 @@ export default function Home() {
   // Process a single token
   const processToken = async (contractAddress, tokenId) => {
     try {
+      console.log(
+        `Requesting token ${tokenId} from contract ${contractAddress}`
+      );
+
       const response = await fetch("/api/scrape", {
         method: "POST",
         headers: {
@@ -34,16 +38,22 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to process token");
+        console.error(`Error response for token ${tokenId}:`, errorData);
+        throw new Error(
+          errorData.error ||
+            `Failed to process token ${tokenId} (HTTP ${response.status})`
+        );
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log(`Successfully processed token ${tokenId}`);
+      return data;
     } catch (error) {
       console.error(`Error processing token ${tokenId}:`, error);
       return {
         tokenId,
         success: false,
-        error: error.message,
+        error: error.message || `Failed to process token ${tokenId}`,
       };
     }
   };
@@ -256,6 +266,23 @@ export default function Home() {
           {error && (
             <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md">
               <p>{error}</p>
+              <div className="mt-2 text-sm">
+                <p className="font-semibold">Troubleshooting tips:</p>
+                <ul className="list-disc pl-5 mt-1 space-y-1">
+                  <li>
+                    Verify the contract address is correct and is an ERC-721 or
+                    ERC-1155 NFT contract
+                  </li>
+                  <li>
+                    Check if the token IDs you specified exist in the collection
+                  </li>
+                  <li>Try with a smaller range of token IDs (e.g., 1-5)</li>
+                  <li>
+                    Some collections use non-sequential token IDs or start from
+                    0
+                  </li>
+                </ul>
+              </div>
             </div>
           )}
 
@@ -331,6 +358,49 @@ export default function Home() {
               <p className="text-gray-600 dark:text-gray-400">
                 Receive a ZIP file containing all NFT images and metadata.
               </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-12">
+          <h2 className="text-2xl font-semibold mb-4 text-center">
+            Example Collections
+          </h2>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+            <p className="mb-4 text-gray-600 dark:text-gray-400">
+              Try these known working NFT collections:
+            </p>
+
+            <div className="space-y-4">
+              <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                <h3 className="font-medium">Bored Ape Yacht Club</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Contract: 0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Token IDs: 1-10
+                </p>
+              </div>
+
+              <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                <h3 className="font-medium">Moonbirds</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Contract: 0x23581767a106ae21c074b2276D25e5C3e136a68b
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Token IDs: 1-10
+                </p>
+              </div>
+
+              <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                <h3 className="font-medium">Proof Collective Mythics</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Contract: 0xC0FFee8FF7e5497C2d6F7684859709225Fcc5Be8
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Token IDs: 1-10
+                </p>
+              </div>
             </div>
           </div>
         </div>

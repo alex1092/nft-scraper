@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getTokenURI, fetchMetadata, fetchImageData } from "@/utils/nftScraper";
 
+// Default API key for demo purposes - not recommended for production
+const FALLBACK_INFURA_KEY = "d33312562fd342ca878310420de6935d";
+
 // Process a single token and return its data
 export async function POST(request) {
   try {
@@ -13,24 +16,14 @@ export async function POST(request) {
       );
     }
 
-    // Get API keys from environment variables
-    const infuraApiKey = process.env.INFURA_API_KEY;
+    // Get API keys from environment variables with fallbacks
+    const infuraApiKey = process.env.INFURA_API_KEY || FALLBACK_INFURA_KEY;
     const alchemyApiKey = process.env.ALCHEMY_API_KEY;
     const primaryProvider = process.env.PRIMARY_PROVIDER || "infura";
 
-    if (!infuraApiKey && primaryProvider === "infura") {
-      return NextResponse.json(
-        { error: "Missing INFURA_API_KEY in environment variables" },
-        { status: 500 }
-      );
-    }
-
-    if (!alchemyApiKey && primaryProvider === "alchemy") {
-      return NextResponse.json(
-        { error: "Missing ALCHEMY_API_KEY in environment variables" },
-        { status: 500 }
-      );
-    }
+    console.log(
+      `Using provider: ${primaryProvider}, Contract: ${contractAddress}, TokenID: ${tokenId}`
+    );
 
     // Process a single token
     console.log(`Processing token ID: ${tokenId}`);
@@ -42,11 +35,16 @@ export async function POST(request) {
       infuraApiKey,
       primaryProvider
     );
+
     if (!tokenURI) {
+      console.error(
+        `Failed to get tokenURI for contract ${contractAddress} and token ${tokenId}`
+      );
       return NextResponse.json({
         tokenId,
         success: false,
-        error: "Failed to get tokenURI",
+        error:
+          "Failed to get tokenURI. Please check the contract address and token ID.",
       });
     }
 
@@ -88,6 +86,9 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("Error processing token:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "An unknown error occurred" },
+      { status: 500 }
+    );
   }
 }
