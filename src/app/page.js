@@ -150,7 +150,7 @@ export default function Home() {
 
             <div className="text-sm text-gray-500 dark:text-gray-400">
               <p>
-                Note: For performance reasons, a maximum of 100 NFTs can be
+                Note: For performance reasons, a maximum of 10 NFTs can be
                 scraped at once.
               </p>
             </div>

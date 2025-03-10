@@ -34,7 +34,7 @@ async function handleScrapeRequest(contractAddress, startTokenId, endTokenId) {
     }
 
     // Limit the number of tokens to scrape to prevent abuse
-    const maxTokens = 100;
+    const maxTokens = 10;
     const actualEndTokenId = Math.min(
       Number(startTokenId) + maxTokens,
       Number(endTokenId)
